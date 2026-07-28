@@ -307,10 +307,18 @@ async function svRO(){dd.budgetRollover=aEl('sro')?.checked||false;await sv();t(
 
 function ran(){
   var ms=[],seen={};dd.transactions.forEach(function(t){var m=mm(t.date);if(!seen[m]){seen[m]=true;ms.push(m);}});ms.sort();
-  var now=new Date(),thisM=mm(now),mt=dd.transactions.filter(function(t){return mm(t.date)===thisM}),ae=actualExpense(mt),inc=mt.filter(function(t){return t.type==='收入'}).reduce(function(s,t){return s+t.amount},0);
+  var sel=aEl('amMonth');
+  if(ms.length>0){
+    var curSel=sel?sel.value:'';
+    if(!curSel) curSel=ms[ms.length-1];
+    if(sel) sel.innerHTML=ms.map(function(m){return '<option value="'+m+'"'+(m===curSel?' selected':'')+'>'+mn(m)+'</option>';}).join('');
+  }
+  var thisM=sel&&sel.value?sel.value:mm(new Date()),mt=dd.transactions.filter(function(t){return mm(t.date)===thisM}),ae=actualExpense(mt),inc=mt.filter(function(t){return t.type==='收入'}).reduce(function(s,t){return s+t.amount},0);
+  var now=new Date();
+
   var rB=getBudgetByType('rigid'),fB=getBudgetByType('flex'),tbl=rB+fB;
   if(dd.budgetRollover){var pm=new Date(now.getFullYear(),now.getMonth()-1,1),pms=pm.getFullYear()+'-'+String(pm.getMonth()+1).padStart(2,'0'),ptx=dd.transactions.filter(function(t){return mm(t.date)===pms}),ps=ptx.filter(function(t){return t.type==='支出'&&!(t.reimbursable&&!t.reimbursed)&&(gcc(t.cat1)||{}).budgetType!=='rigid'}).reduce(function(s,t){return s+t.amount},0),carry=fB-ps;if(carry>0){fB+=carry;tbl+=carry;}}
-  var cd=dd.budgetCycleDay||1,anchor=new Date(now.getFullYear(),now.getMonth(),cd);if(now<anchor)anchor=new Date(now.getFullYear(),now.getMonth()-1,cd);
+  var selMo=thisM.split('-');var cd=dd.budgetCycleDay||1,anchor=new Date(parseInt(selMo[0]),parseInt(selMo[1])-1,cd);if(now<anchor)anchor=new Date(now.getFullYear(),now.getMonth()-1,cd);
   var nextAnchor=new Date(anchor);nextAnchor.setMonth(nextAnchor.getMonth()+1);if(nextAnchor.getDate()!==cd)nextAnchor.setDate(0);
   var rem=Math.ceil((nextAnchor-now)/86400000);if(rem<=0)rem=1;
   var today=Math.ceil((now-anchor)/86400000)+1,dl=rem>0?Math.max(0,(fB-ae.actual)/rem):0,avg=today>0?ae.actual/today:0,sr=inc>0?((inc-ae.actual)/inc*100).toFixed(1):'0.0';
