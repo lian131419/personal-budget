@@ -1,5 +1,6 @@
-const CACHE_NAME = 'budget-v2';
-const URLS = ['.', 'index.html', 'manifest.json', 'sw.js'];
+const CACHE_NAME = 'budget-v3';
+const SCOPE = '/personal-budget/';
+const URLS = [SCOPE, SCOPE + 'index.html', SCOPE + 'manifest.json', SCOPE + 'sw.js'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE_NAME).then(c => c.addAll(URLS)));
