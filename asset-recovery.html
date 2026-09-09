@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>资产数据找回工具</title>
+<style>
+:root{--ink:#16181d;--paper:#fcfcfa;--line:#d8d5cf;--muted:#6b7280;--accent:#0f4c81;--ok:#1a6b3c;--warn:#8a4b08}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:"PingFang SC","Microsoft YaHei",sans-serif;background:var(--paper);color:var(--ink);line-height:1.7;padding:28px 16px}
+.wrap{max-width:760px;margin:0 auto}
+h1{font-size:1.3rem;margin-bottom:6px;letter-spacing:.02em}
+.sub{font-size:.8rem;color:var(--muted);margin-bottom:18px}
+.card{border:1px solid var(--line);padding:14px 16px;margin-bottom:14px;background:#fff}
+.card h2{font-size:.95rem;margin-bottom:10px;border-bottom:2px solid var(--ink);padding-bottom:6px}
+label{font-size:.78rem;color:var(--muted);display:block;margin:8px 0 4px;font-weight:600}
+input[type=password],input[type=text],select{width:100%;padding:8px 10px;border:1px solid var(--line);font-size:.85rem;background:#fff}
+textarea{width:100%;padding:8px;border:1px solid var(--line);font-size:.75rem;font-family:monospace;height:90px}
+.btn{display:inline-block;padding:8px 18px;border:1px solid var(--ink);background:#fff;font-size:.85rem;cursor:pointer;margin:8px 6px 0 0}
+.btn.primary{background:var(--ink);color:#fff}
+.btn.ok{background:var(--ok);color:#fff;border-color:var(--ok)}
+.btn:disabled{opacity:.4;cursor:default}
+.metrics{display:flex;gap:10px;margin:10px 0;flex-wrap:wrap}
+.metric{border:1px solid var(--line);padding:8px 14px;min-width:110px}
+.metric .n{font-size:1.2rem;font-weight:700}
+.metric .l{font-size:.68rem;color:var(--muted)}
+table{width:100%;border-collapse:collapse;font-size:.78rem;margin-top:8px}
+th{text-align:left;border-bottom:2px solid var(--ink);padding:5px 7px;font-size:.72rem}
+td{border-bottom:1px solid var(--line);padding:5px 7px}
+.msg{padding:8px 12px;border-left:3px solid var(--line);margin:8px 0;font-size:.8rem}
+.msg.warn{border-color:var(--warn);background:#fdf6ec}
+.msg.ok{border-color:var(--ok);background:#f0f8f1}
+.msg.err{border-color:#b91c1c;background:#fdf0f0}
+.step-tip{font-size:.75rem;color:var(--muted);background:#f5f4f1;padding:8px 12px;margin:8px 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>资产数据找回工具</h1>
+<div class="sub">旧版资产模块有独立密码，数据以加密形式存在浏览器本地。本工具在本机解密并找回，全程不上传。可处理三种来源：① 本机旧存储 ② 粘贴旧备份里的资产密文 ③ 选择账本备份文件。</div>
+
+<div class="card">
+<h2>第一步 · 选择数据来源</h2>
+<div class="step-tip">提示：先想清楚——旧资产是在「本地文件版（双击 index.html）」还是「线上链接」用的？两边数据完全隔离，必须在对的那边操作。若本机旧存储检测不到，多半是用在另一台设备/另一个入口。</div>
+<div id="srcStatus"></div>
+<label>数据来源</label>
+<select id="src">
+<option value="local">本机浏览器旧存储（bp_assets_de）</option>
+<option value="backup">账本备份文件（选择 .json，自动提取资产段）</option>
+<option value="paste">手动粘贴密文</option>
+</select>
+<div id="backupRow" style="display:none"><label>账本备份文件</label><input type="file" id="bfile" accept=".json"></div>
+<div id="pasteRow" style="display:none"><label>资产密文（JSON 格式：{"s":"...","i":"...","c":"..."}；可从备份文件或开发者工具的 localStorage 复制）</label><textarea id="ctext"></textarea></div>
+<button class="btn" id="btnLoad" onclick="loadCipher()">加载数据</button>
+</div>
+
+<div class="card" id="step2" style="display:none">
+<h2>第二步 · 输入资产模块原密码解密</h2>
+<div class="step-tip">密码就是旧资产页（或旧 assets.html）当时设置的密码。尝试顺序建议：直接输入 → 若失败可试主账本密码 → 空密码（若从未设置过）。AES 加密不可逆，忘了密码将无法找回，任何工具都一样。</div>
+<label>密码</label>
+<input type="password" id="pw" placeholder="旧资产密码">
+<button class="btn primary" id="btnDec" onclick="doDecrypt()">解密</button>
+<div id="decMsg"></div>
+</div>
+
+<div class="card" id="step3" style="display:none">
+<h2>第三步 · 找回结果</h2>
+<div id="result"></div>
+<button class="btn ok" id="btnWrite" style="display:none" onclick="writeBack()">写回本机并让账本自动迁移</button>
+<button class="btn" id="btnExport" style="display:none" onclick="exportRaw()">导出解密后的数据（JSON 存档）</button>
+<div id="writeMsg"></div>
+</div>
+<div id="foot" style="font-size:.7rem;color:var(--muted)">纯本地运行：解密与写回都在你的浏览器内存完成，数据不上传任何服务器。</div>
+</div>
+
+<script>
+var CR={_e:function(s){return new TextEncoder().encode(s)},_d:function(b){return new TextDecoder().decode(b)},_h:function(b){return Array.from(new Uint8Array(b)).map(function(x){return x.toString(16).padStart(2,'0')}).join('')},_u:function(h){return new Uint8Array(h.match(/.{1,2}/g).map(function(b){return parseInt(b,16)})).buffer},async _k(p,s){var b=await crypto.subtle.importKey('raw',this._e(p),'PBKDF2',false,['deriveKey']);return crypto.subtle.deriveKey({name:'PBKDF2',salt:s,iterations:200000,hash:'SHA-256'},b,{name:'AES-GCM',length:256},false,['encrypt','decrypt'])},async enc(txt,pass){var s=crypto.getRandomValues(new Uint8Array(16)),i=crypto.getRandomValues(new Uint8Array(12)),k=await this._k(pass,s),c=await crypto.subtle.encrypt({name:'AES-GCM',iv:i},k,this._e(txt));return JSON.stringify({s:this._h(s),i:this._h(i),c:this._h(c)})},async dec(ct,pass){try{var o=JSON.parse(ct),s=new Uint8Array(this._u(o.s)),i=new Uint8Array(this._u(o.i)),ct2=new Uint8Array(this._u(o.c)),k=await this._k(pass,s);return this._d(await crypto.subtle.decrypt({name:'AES-GCM',iv:i},k,ct2))}catch(e){return null}}};
+var CIPHER=null, PLAIN=null;
+function $(id){return document.getElementById(id)}
+function msg(el,text,cls){el.innerHTML='<div class="msg '+cls+'">'+text+'</div>'}
+
+$('src').onchange=function(){
+  var v=this.value;
+  $('backupRow').style.display=v==='backup'?'block':'none';
+  $('pasteRow').style.display=v==='paste'?'block':'none';
+};
+function t2(t){return t==='item'?'物品':t==='subscription'?'订阅':t==='fixed'?'固定':t}
+
+function loadCipher(){
+  var v=$('src').value;
+  if(v==='local'){
+    var e=localStorage.getItem('bp_assets_de');
+    if(e){CIPHER=e;proceed()}
+    else{msg($('srcStatus'),'本机未找到旧资产存储（bp_assets_de）。可能原因：①旧数据在另一台设备/线上链接/本地文件（存储按设备与访问方式隔离）②迁移已成功且旧存储已被清理（此时数据应在账本里）③曾用「恢复工具」清过。请切换数据来源或先看正文指引。','warn')}
+  }else if(v==='backup'){
+    var f=$('bfile').files[0];
+    if(!f){msg($('srcStatus'),'请先选择备份文件','warn');return}
+    var r=new FileReader();
+    r.onload=function(ev){
+      try{
+        var j=JSON.parse(ev.target.result);
+        var found=null;
+        if(j&&j.s&&j.i&&j.c)found=ev.target.result;          // 直接是加密包
+        else if(j&&j.assetsEnc)found=j.assetsEnc;            // 账本备份含资产段
+        else if(j&&j.assetsEnc==null&&j.assets){             // 明文资产段（极少数）
+          CIPHER=null;PLAIN=j;found='plain';
+        }
+        if(found==='plain'){proceed()}
+        else if(found){CIPHER=found;proceed()}
+        else msg($('srcStatus'),'该备份里没有找到资产数据段（无 assetsEnc / 不是加密包）。备份需是 8-30 之后导出的新版。','warn');
+      }catch(e){msg($('srcStatus'),'文件解析失败：'+e.message,'err')}
+    };
+    r.readAsText(f);
+  }else{
+    var t=$('ctext').value.trim();
+    if(!t){msg($('srcStatus'),'请粘贴密文','warn');return}
+    CIPHER=t;proceed();
+  }
+}
+function proceed(){
+  msg($('srcStatus'),'数据已加载'+(CIPHER?'（加密包，需密码解密）':'（明文）')+'，进入第二步。','ok');
+  $('step2').style.display='block';
+  if(PLAIN){$('pw').value='';showResult()}
+  else $('pw').focus();
+}
+async function doDecrypt(){
+  var p=$('pw').value;
+  if(p===null){msg($('decMsg'),'已取消','warn');return}
+  if(!p){var j=await CR.dec(CIPHER,'');if(j){PLAIN=JSON.parse(j);msg($('decMsg'),'检测到未设密码的资产数据（空密码加密），已直接解密。','ok');showResult();return}msg($('decMsg'),'请输入密码（或确认真的是未设密码——此处空密码已自动尝试）','warn');return}
+  var j=await CR.dec(CIPHER,p);
+  if(!j){msg($('decMsg'),'密码不正确。可再试：①主账本密码 ②空密码请在输入框只留一个空格?（工具无法提交空密码——若确实未设密码，用任意密码提交后会自动尝试空密码兜底？不会。建议：确认当时是否设置过资产密码——设置过才需要密码）','err');return}
+  try{PLAIN=JSON.parse(j);showResult()}catch(e){msg($('decMsg'),'解密成功但内容不是资产数据，可能密码对但数据被覆盖。','err')}
+}
+function showResult(){
+  $('decMsg').innerHTML='';
+  var d=PLAIN||{};
+  var assets=d.assets||[],logs=d.assetLogs||[];
+  var held=assets.filter(function(a){return a.status!=='sold'});
+  var cost=held.reduce(function(s,a){return s+(a.cost||0)*(a.qty||1)},0);
+  var sold=assets.length-held.length;
+  var h='<div class="metrics">'
+    +'<div class="metric"><div class="n">'+assets.length+'</div><div class="l">资产总数（含已售 '+sold+'）</div></div>'
+    +'<div class="metric"><div class="n">'+held.length+'</div><div class="l">持有中</div></div>'
+    +'<div class="metric"><div class="n">'+cost.toLocaleString('zh-CN',{minimumFractionDigits:2,maximumFractionDigits:2})+'</div><div class="l">持有总成本</div></div>'
+    +'<div class="metric"><div class="n">'+(d.stats?(d.stats.wish||[]).length:'-')+'</div><div class="l">愿望清单</div></div>'
+    +'</div>';
+  if(assets.length){
+    h+='<table><tr><th>名称</th><th>类型</th><th>成本</th><th>数量</th><th>状态</th><th>日期</th></tr>';
+    assets.slice(0,50).forEach(function(a){
+      h+='<tr><td>'+(a.name||'?')+'</td><td>'+(t2(a.type))+'</td><td>'+Number(a.cost||0).toFixed(2)+'</td><td>'+(a.qty||1)+'</td><td>'+(a.status||'active')+'</td><td>'+(a.date||'-')+'</td></tr>';
+    });
+    if(assets.length>50)h+='<tr><td colspan="6">… 共 '+assets.length+' 条，前 50 条显示</td></tr>';
+    h+='</table>';
+  }else h+='<div class="msg warn">解密出的资产列表为空——数据可能是空的，或这不是正确的存储。</div>';
+  $('result').innerHTML=h;
+  $('step3').style.display='block';
+  $('btnWrite').style.display='block';
+  $('btnExport').style.display='block';
+}
+async function writeBack(){
+  var mp=prompt('写回前需要把数据加密存入本机旧存储键，供账本「资产页」自动迁移识别。\n请输入账本主密码（与账本一致的密码；账本没设密码则直接点确定）：');
+  if(mp===null)return;
+  var enc=await CR.enc(JSON.stringify(PLAIN),mp||'');
+  localStorage.setItem('bp_assets_de',enc);
+  localStorage.setItem('bp_assets_ph','restored-via-tool');
+  msg($('writeMsg'),'已写回本机。现在：刷新/打开账本 → 进入「资产」页 → 系统会自动检测并用你输入的主密码完成迁移（若迁移提示输旧密码，输入刚才的资产原密码即可）。迁移成功后旧存储自动清理。','ok');
+}
+function exportRaw(){
+  var b=new Blob([JSON.stringify(PLAIN)],{type:'application/json'});
+  var a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='资产解密存档_'+new Date().toISOString().slice(0,10)+'.json';a.click();
+  URL.revokeObjectURL(a.href);
+}
+</script>
+</body>
+</html>
