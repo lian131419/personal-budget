@@ -1,4 +1,4 @@
-var CACHE_NAME = 'budget-v9';
+var CACHE_NAME = 'budget-v10';
 var BASE = new URL('./', self.location).pathname;
 var URLS = [BASE, BASE + 'index.html', BASE + 'manifest.json'];
 
